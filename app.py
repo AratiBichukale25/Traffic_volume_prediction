@@ -1,58 +1,84 @@
 import streamlit as st
 import pandas as pd
-from model import train_model
+import pickle
 
-st.set_page_config(page_title="Traffic Volume Predictor", layout="centered")
+# Page config
+st.set_page_config(page_title="Traffic Volume Predictor", layout="wide")
 
-st.title("🚦 Metro Traffic Volume Predictor")
+# Load the model
+@st.cache_resource
+def load_model():
+    with open("model.pkl", "rb") as f:
+        return pickle.load(f)
 
-st.markdown("This ML app predicts **traffic volume** based on weather and time features.")
+model = load_model()
 
-with st.spinner("Training model..."):
-    model, metrics = train_model()
+# Load the dataset (used in model.py)
+@st.cache_data
+def load_data():
+    df = pd.read_csv("traffic_data_800.csv")
+    df.drop(columns=["date_time", "weather_description"], inplace=True, errors="ignore")
+    df = pd.get_dummies(df, columns=["holiday", "weather_main"], drop_first=True)
+    df.dropna(inplace=True)
+    return df
 
-st.success("Model trained successfully!")
+# Load feature sample for form
+def get_feature_sample():
+    return load_data().drop(columns=["traffic_volume"], errors="ignore")
 
-st.subheader("📊 Model Accuracy Metrics")
-st.table(pd.DataFrame([metrics]))
+# Sidebar navigation
+st.sidebar.title("Go to")
+page = st.sidebar.radio("", ["Home", "Dataset", "Summary", "Predict"])
 
-st.markdown("---")
+# =================== Home ===================
+if page == "Home":
+    st.title("🚦 Traffic Volume Prediction App")
+    st.markdown("""
+        Welcome to the **Traffic Volume Predictor**!
+        
+        This app uses a trained **Random Forest Regression** model to estimate traffic volume based on weather and holiday data.
+        
+        Use the sidebar to navigate through:
+        - 📊 Dataset view
+        - 📈 Summary statistics
+        - 🔍 Live prediction form
+    """)
 
-st.subheader("🔍 Predict Traffic Volume")
+# =================== Dataset ===================
+elif page == "Dataset":
+    st.title("📊 Dataset Preview")
+    df = load_data()
+    st.dataframe(df.head(50), use_container_width=True)
+    st.caption(f"Showing first 50 of {len(df)} rows from `traffic_data_800.csv`")
 
-temp = st.slider("Temperature (in Kelvin)", 250, 320, 280)
-rain_1h = st.slider("Rain (mm)", 0.0, 50.0, 0.0)
-snow_1h = st.slider("Snow (mm)", 0.0, 50.0, 0.0)
-clouds_all = st.slider("Clouds (%)", 0, 100, 50)
-hour = st.slider("Hour of Day", 0, 23, 12)
-month = st.slider("Month", 1, 12, 6)
-dayofweek = st.slider("Day of Week (0=Mon)", 0, 6, 2)
+# =================== Summary ===================
+elif page == "Summary":
+    st.title("📈 Dataset Summary")
+    df = load_data()
+    st.write("**Shape:**", df.shape)
+    st.write("**Columns:**", df.columns.tolist())
+    st.bar_chart(df["traffic_volume"])
 
-weather_main = st.selectbox("Weather Main", ['Clear', 'Clouds', 'Drizzle', 'Fog', 'Haze', 'Mist', 'Rain', 'Smoke', 'Snow', 'Squall', 'Thunderstorm'])
+# =================== Predict ===================
+elif page == "Predict":
+    st.title("🎯 Predict Traffic Volume")
 
-# One-hot encoding of weather
-weather_columns = ['weather_main_Clear', 'weather_main_Clouds', 'weather_main_Drizzle',
-                   'weather_main_Fog', 'weather_main_Haze', 'weather_main_Mist',
-                   'weather_main_Rain', 'weather_main_Smoke', 'weather_main_Snow',
-                   'weather_main_Squall', 'weather_main_Thunderstorm']
+    st.markdown("Enter input values below to get a prediction:")
 
-weather_data = {col: 0 for col in weather_columns}
-col_name = f"weather_main_{weather_main}"
-if col_name in weather_data:
-    weather_data[col_name] = 1
+    df_sample = get_feature_sample()
+    input_data = {}
 
-# Final input
-input_data = pd.DataFrame([{
-    'temp': temp,
-    'rain_1h': rain_1h,
-    'snow_1h': snow_1h,
-    'clouds_all': clouds_all,
-    'hour': hour,
-    'month': month,
-    'dayofweek': dayofweek,
-    **weather_data
-}])
+    # 2-column layout for input fields
+    col1, col2 = st.columns(2)
+    for i, col in enumerate(df_sample.columns):
+        with (col1 if i % 2 == 0 else col2):
+            if pd.api.types.is_numeric_dtype(df_sample[col]):
+                input_data[col] = st.number_input(col, value=float(df_sample[col].median()))
+            else:
+                input_data[col] = st.selectbox(col, list(df_sample[col].unique()))
 
-if st.button("Predict Traffic Volume"):
-    prediction = model.predict(input_data)[0]
-    st.success(f"Predicted Traffic Volume: {int(prediction)} vehicles")
+    st.markdown("---")
+    if st.button("🔍 Predict"):
+        input_df = pd.DataFrame([input_data])
+        prediction = model.predict(input_df)[0]
+        st.success(f"🚗 **Predicted Traffic Volume:** {int(prediction):,} vehicles")
