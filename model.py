@@ -4,7 +4,7 @@ from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 
 def load_data():
-    df = pd.read_csv("C:\Users\arati\OneDrive\Desktop\mlCas\traffic_data_800.csv")
+    df = pd.read_csv("traffic_data_800.csv")
     df['date_time'] = pd.to_datetime(df['date_time'])
     df['hour'] = df['date_time'].dt.hour
     df['month'] = df['date_time'].dt.month
